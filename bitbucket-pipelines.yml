@@ -1,0 +1,59 @@
+image: atlassian/default-image:2
+
+pipelines:
+  branches:
+    master:
+    - step:
+        name: Build and Test
+        image: node:16.13.2
+        caches:
+          - node
+        script:
+          - npm install
+          - CI=false npm run-script build
+          - mkdir application
+          - cp -r appspec.yml application/
+          - cp -r scripts application/
+          - cp -r build application/
+          - apt-get update
+          - apt-get install -y zip
+          - zip -r application.zip application/
+          - cp -r application.zip ../
+        artifacts:
+          - application.zip
+
+    - step:
+        name: Upload to AWS S3
+        services:
+          - docker
+        script:
+          # Test upload
+          - pipe: atlassian/aws-code-deploy:0.2.10
+            variables:
+              AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+              AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+              AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+              APPLICATION_NAME: ${APPLICATION_NAME}
+              ZIP_FILE: 'application.zip'
+              COMMAND: 'upload'
+              S3_BUCKET: $S3_BUCKET
+              
+    - step:
+        name: Deploy with AWS CodeDeploy
+        deployment: dev
+        services:
+        - docker
+        script:
+        # Test upload
+        - pipe: atlassian/aws-code-deploy:0.2.10
+          variables:
+            AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+            AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+            AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+            S3_BUCKET: $S3_BUCKET
+            COMMAND: 'deploy'
+            APPLICATION_NAME: ${APPLICATION_NAME}
+            DEPLOYMENT_GROUP: $DEPLOYMENT_GROUP_NAME
+            IGNORE_APPLICATION_STOP_FAILURES: 'true'
+            FILE_EXISTS_BEHAVIOR: 'OVERWRITE'
+            WAIT: 'true'
